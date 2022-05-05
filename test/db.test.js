@@ -1,11 +1,11 @@
 const assert = require('assert');
-const {findByKey, findAll, createOrUpdate,} = require('../services/db');
+const {findByKey, findAll, createOrUpdate, removeByKey,} = require('../services/db');
 
 // Store data here
 let storage;
 
 // Mock a database connection
-let conn;
+let repo;
 
 // Store req params
 let params;
@@ -30,35 +30,38 @@ describe('Database service', () => {
 			},
 		];
 
-		conn = {
-			models: {
-				Data: {
-					create: (data) => (data),
-					find: () => ({
-						exec: () => (storage),
-					}),
-					findOne: (par) => {
-						params = par;
-						return ({
-							exec: () => (storage[0]),
-						})
-					},
-					updateOne: (_, body) => {
-						storage[0] = body;
+		repo = {
+			create: (data) => (data),
+			find: () => ({
+				exec: () => (storage),
+			}),
+			findOne: (par) => {
+				params = par;
+				return ({
+					exec: () => (storage[0]),
+				})
+			},
+			updateOne: (_, body) => {
+				storage[0] = body;
 
-						return {
-							exec: () => ({
-								upsertedId: "1",
-							}),
-						};
-					}
-				},
+				return {
+					exec: () => ({
+						upsertedId: "1",
+					}),
+				};
+			},
+			deleteOne: (par) => {
+				params = par;
+				storage = [];
+				return {
+					exec: () => ({}),
+				};
 			},
 		};
 	});
 
 	it('should find all', async () => {
-		await findAll(conn)(null, res);
+		await findAll(repo)(null, res);
 
 		assert.ok(Array.isArray(result));
 		assert.equal(result.length, 1);
@@ -70,7 +73,7 @@ describe('Database service', () => {
 			params: {key: 'KEY'},
 		};
 
-		await findByKey(conn)(req, res);
+		await findByKey(repo)(req, res);
 
 		// Check correct params are being used
 		assert.strictEqual(params.key, req.params.key);
@@ -84,13 +87,13 @@ describe('Database service', () => {
 		};
 
 		// Override default method behaviour for this test
-		conn.models.Data.findOne = (par) => {
+		repo.findOne = (par) => {
 			params = par;
 			return ({
 				exec: () => null,
 			});
 		}
-		await findByKey(conn)(req, res);
+		await findByKey(repo)(req, res);
 
 		// Check correct params are being used
 		assert.equal(params.key, req.params.key);
@@ -100,13 +103,25 @@ describe('Database service', () => {
 		assert.equal(result.value.length, 10); // random string length is 10 for now
 	});
 
+	it('should fail validation when getting a key value pair', async () => {
+		const req = {
+			params: {},
+		};
+
+		await findByKey(repo)(req, res);
+
+		assert.ok(result);
+		assert.equal(status, 400);
+		assert.equal(result.message, "invalid request");
+	});
+
 	it('should update existing key value pair', async () => {
 		const req = {
 			params: {key: "Other_key"},
 			body: {value: "Other_value"},
 		};
 
-		await createOrUpdate(conn)(req, res);
+		await createOrUpdate(repo)(req, res);
 
 		assert.ok(storage[0]);
 		assert.equal(storage[0].key, req.params.key);
@@ -120,14 +135,15 @@ describe('Database service', () => {
 		};
 
 		// Override default method behaviour for this test
-		conn.models.Data.updateOne = (_, body) => {
+		repo.updateOne = (_, body) => {
 			storage.push(body);
 			return {
-				exec: () => {},
+				exec: () => {
+				},
 			};
 		};
 
-		await createOrUpdate(conn)(req, res);
+		await createOrUpdate(repo)(req, res);
 
 		assert.ok(storage[1]);
 		assert.equal(storage[1].key, req.params.key);
@@ -140,7 +156,30 @@ describe('Database service', () => {
 			body: {},
 		};
 
-		await createOrUpdate(conn)(req, res);
+		await createOrUpdate(repo)(req, res);
+
+		assert.ok(result);
+		assert.equal(status, 400);
+		assert.equal(result.message, "invalid request");
+	});
+
+	it('should remove one by key', async () => {
+		const req = {
+			params: {key: storage[0].key},
+		};
+
+		await removeByKey(repo)(req, res);
+
+		assert.equal(params.key, req.params.key);
+		assert.equal(storage.length, 0);
+	});
+
+	it('should fail validation when removing a key value pair', async () => {
+		const req = {
+			params: {},
+		};
+
+		await removeByKey(repo)(req, res);
 
 		assert.ok(result);
 		assert.equal(status, 400);
