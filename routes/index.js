@@ -7,12 +7,12 @@ const router = express.Router();
 // Keep the code loosely coupled
 const conn = connectionFactory();
 const repo = getDataRepo(conn);
+const logger = console.log; // Can swap with a file logger function, or an external logger tool
 
-// todo: Consider providing a logger to use instead of default console.log
-router.get('/', findAll(repo));
-router.get('/:key', findByKey(repo));
-router.post('/', createOrUpdate(repo));
-router.delete('/', removeAll(repo));
-router.delete('/:key', removeByKey(repo));
+router.get('/', findAll(repo, logger));
+router.get('/:key', findByKey(repo, logger));
+router.post('/', createOrUpdate(repo, logger));
+router.delete('/', removeAll(repo, logger));
+router.delete('/:key', removeByKey(repo, logger));
 
 module.exports = router;

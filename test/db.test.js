@@ -1,14 +1,16 @@
+require('dotenv').config({
+	path: '.env.testing',
+})
 const assert = require('assert');
-const {findByKey, findAll, createOrUpdate, removeByKey, removeAll,} = require('../services/db');
-
-// Store data here
-let storage;
+const {findByKey, findAll, createOrUpdate, removeByKey, removeAll, getDataRepo,} = require('../services/db');
+const {MongoMemoryServer} = require('mongodb-memory-server');
+const mongoose = require("mongoose");
+const data_schema = require('../schemas/data_schema');
 
 // Mock a database connection
+let server;
+let conn;
 let repo;
-
-// Store req params
-let params;
 
 // Store json response result
 let result;
@@ -19,40 +21,38 @@ const res = {
 }
 
 describe('Database service', () => {
-	beforeEach(() => {
-		params = null;
+	before(async () => {
+		// Create an in-memory database for testing
+		server = await MongoMemoryServer.create();
+
+		conn = await mongoose.createConnection(server.getUri());
+		conn.model('Data', data_schema);
+
+		repo = getDataRepo(conn);
+	});
+
+	beforeEach(async () => {
 		result = null;
 		status = null;
 
-		storage = [
+		// Reset database data
+		await conn.models.Data.deleteMany();
+		await conn.models.Data.insertMany([
 			{
-				key: 'KEY', value: 'VALUE',
+				key: 'key_1', value: 'value_1',
 			},
-		];
+		]);
+	});
 
-		repo = {
-			create: (data) => (data),
-			find: () => (storage),
-			findOne: (par) => {
-				params = par;
-				return storage[0];
-			},
-			updateOne: (_, body) => {
-				storage[0] = body;
-				return {
-					upsertedId: "1",
-				};
-			},
-			deleteOne: (par) => {
-				params = par;
-				storage = [];
-				return {};
-			},
-			deleteMany: () => {
-				storage = [];
-				return {};
-			},
-		};
+	after(async () => {
+		// Close db
+		if (conn) {
+			await conn.close();
+		}
+
+		if (server) {
+			await server.stop();
+		}
 	});
 
 	it('should find all', async () => {
@@ -60,20 +60,23 @@ describe('Database service', () => {
 
 		assert.ok(Array.isArray(result));
 		assert.equal(result.length, 1);
-		assert.strictEqual(result[0], storage[0]);
+
+		const data = await repo.find();
+		assert.strictEqual(result[0].key, data[0].key);
+		assert.strictEqual(result[0].value, data[0].value);
 	});
 
 	it('should find one by key', async () => {
 		const req = {
-			params: {key: 'KEY'},
+			params: {key: 'key_1'},
 		};
 
 		await findByKey(repo)(req, res);
 
-		// Check correct params are being used
-		assert.strictEqual(params.key, req.params.key);
 		assert.ok(result);
-		assert.strictEqual(result, storage[0]);
+		const data = await repo.findOne();
+		assert.strictEqual(result.key, data.key);
+		assert.strictEqual(result.value, data.value);
 	});
 
 	it('should try to get a missing key and create one', async () => {
@@ -81,15 +84,8 @@ describe('Database service', () => {
 			params: {key: 'missing'},
 		};
 
-		// Override default method behaviour for this test
-		repo.findOne = (par) => {
-			params = par;
-			return null;
-		}
 		await findByKey(repo)(req, res);
 
-		// Check correct params are being used
-		assert.equal(params.key, req.params.key);
 		assert.ok(result);
 		assert.equal(result.key, 'missing');
 		assert.ok(typeof result.value === 'string');
@@ -108,16 +104,30 @@ describe('Database service', () => {
 		assert.equal(result.message, "invalid request");
 	});
 
+	it('should handle max data limit when creating a key value pair', async () => {
+		const req = {
+			params: {key: 'test'},
+		};
+
+		await findByKey(repo)(req, res);
+
+		const count = await repo.count();
+
+		assert.equal(count, process.env.MAX_DATA_COUNT);
+	});
+
 	it('should update existing key value pair', async () => {
 		const req = {
-			body: {key: "Other_key", value: "Other_value"},
+			body: {key: "key_1", value: "value_2"},
 		};
 
 		await createOrUpdate(repo)(req, res);
 
-		assert.ok(storage[0]);
-		assert.equal(storage[0].key, req.body.key);
-		assert.equal(storage[0].value, req.body.value);
+		const data = await repo.findOne({key: 'key_1'});
+
+		assert.ok(data);
+		assert.equal(data.key, req.body.key);
+		assert.equal(data.value, req.body.value);
 	});
 
 	it('should create a new key value pair', async () => {
@@ -125,17 +135,13 @@ describe('Database service', () => {
 			body: {key: "Missing_key", value: "Missing_value"},
 		};
 
-		// Override default method behaviour for this test
-		repo.updateOne = (_, body) => {
-			storage.push(body);
-			return {};
-		};
-
 		await createOrUpdate(repo)(req, res);
 
-		assert.ok(storage[1]);
-		assert.equal(storage[1].key, req.body.key);
-		assert.equal(storage[1].value, req.body.value);
+		const data = await repo.findOne({key: req.body.key});
+
+		assert.ok(data);
+		assert.equal(data.key, req.body.key);
+		assert.equal(data.value, req.body.value);
 	});
 
 	it('should fail validation when creating/updating a key value pair', async () => {
@@ -153,13 +159,14 @@ describe('Database service', () => {
 
 	it('should remove one by key', async () => {
 		const req = {
-			params: {key: storage[0].key},
+			params: {key: 'key_1'},
 		};
 
 		await removeByKey(repo)(req, res);
 
-		assert.equal(params.key, req.params.key);
-		assert.equal(storage.length, 0);
+		const count = await repo.count();
+
+		assert.equal(count, 0);
 	});
 
 	it('should fail validation when removing a key value pair', async () => {
@@ -177,6 +184,8 @@ describe('Database service', () => {
 	it('should remove all key value pairs', async () => {
 		await removeAll(repo)(null, res);
 
-		assert.equal(storage.length, 0);
+		const count = await repo.count();
+
+		assert.equal(count, 0);
 	});
 });
