@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "nodemon bin/www"
+    "start": "nodemon bin/www",
+    "test": "mocha"
   },
   "dependencies": {
     "cookie-parser": "~1.4.4",
@@ -13,5 +14,8 @@
     "mongoose": "^6.3.2",
     "morgan": "~1.9.1",
     "nodemon": "^2.0.16"
+  },
+  "devDependencies": {
+    "mocha": "^10.0.0"
   }
 }

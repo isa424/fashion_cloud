@@ -1,15 +1,36 @@
-const Data = require('../models/data');
+const data_schema = require('../schemas/data_schema');
+const mongoose = require("mongoose");
 
-const findByKey = async (key) => {
-	const res = await Data.findOne({
-		key: key,
-	}).exec();
+const connectionFactory = () => {
+	const conn = mongoose.createConnection(process.env.MONGO_URI);
 
-	console.log('DEBUG', res);
+	conn.model('Data', data_schema);
 
-	return res;
+	return conn;
 };
 
+const findByKey = (conn) => {
+	return async (req, res, next) => {
+		const key = req.params.key;
+
+		const result = await conn.models.Data.findOne({
+			key,
+		}).exec();
+
+		console.log('DEBUG 1', result);
+
+		res.json(result);
+	}
+};
+
+const findAll = (conn) => {
+	return async (req, res, next) => {
+		const result =  await conn.models.Data.find().exec();
+
+		res.json(result);
+	};
+}
+
 module.exports = {
-	findByKey,
+	findByKey, findAll, connectionFactory,
 };
