@@ -4,6 +4,7 @@ const router = express.Router();
 
 const conn = connectionFactory();
 
+// todo: Consider providing a logger to use instead of default console.log
 router.get('/', findAll(conn));
 router.get('/:key', findByKey(conn));
 

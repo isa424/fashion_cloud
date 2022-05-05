@@ -1,5 +1,6 @@
 const data_schema = require('../schemas/data_schema');
 const mongoose = require("mongoose");
+const randomstring = require("randomstring");
 
 const connectionFactory = () => {
 	const conn = mongoose.createConnection(process.env.MONGO_URI);
@@ -10,22 +11,34 @@ const connectionFactory = () => {
 };
 
 const findByKey = (conn) => {
-	return async (req, res, next) => {
+	return async (req, res) => {
 		const key = req.params.key;
 
-		const result = await conn.models.Data.findOne({
+		let result = await conn.models.Data.findOne({
 			key,
 		}).exec();
 
-		console.log('DEBUG 1', result);
+		// If exists return and stop
+		if (result) {
+			console.log('Cache hit for key: ' + key + ' with value: ' + result.value);
+			res.json(result);
+			return;
+		}
+
+		console.log('Cache miss for key: ' + key);
+
+		result = await conn.models.Data.create({
+			key: key,
+			value: randomstring.generate(10),
+		});
 
 		res.json(result);
 	}
 };
 
 const findAll = (conn) => {
-	return async (req, res, next) => {
-		const result =  await conn.models.Data.find().exec();
+	return async (req, res) => {
+		const result = await conn.models.Data.find().exec();
 
 		res.json(result);
 	};
