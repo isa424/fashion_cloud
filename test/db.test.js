@@ -1,5 +1,5 @@
 const assert = require('assert');
-const {findByKey, findAll, createOrUpdate, removeByKey,} = require('../services/db');
+const {findByKey, findAll, createOrUpdate, removeByKey, removeAll,} = require('../services/db');
 
 // Store data here
 let storage;
@@ -32,30 +32,25 @@ describe('Database service', () => {
 
 		repo = {
 			create: (data) => (data),
-			find: () => ({
-				exec: () => (storage),
-			}),
+			find: () => (storage),
 			findOne: (par) => {
 				params = par;
-				return ({
-					exec: () => (storage[0]),
-				})
+				return storage[0];
 			},
 			updateOne: (_, body) => {
 				storage[0] = body;
-
 				return {
-					exec: () => ({
-						upsertedId: "1",
-					}),
+					upsertedId: "1",
 				};
 			},
 			deleteOne: (par) => {
 				params = par;
 				storage = [];
-				return {
-					exec: () => ({}),
-				};
+				return {};
+			},
+			deleteMany: () => {
+				storage = [];
+				return {};
 			},
 		};
 	});
@@ -81,7 +76,7 @@ describe('Database service', () => {
 		assert.strictEqual(result, storage[0]);
 	});
 
-	it('should get a missing key and create one', async () => {
+	it('should try to get a missing key and create one', async () => {
 		const req = {
 			params: {key: 'missing'},
 		};
@@ -89,9 +84,7 @@ describe('Database service', () => {
 		// Override default method behaviour for this test
 		repo.findOne = (par) => {
 			params = par;
-			return ({
-				exec: () => null,
-			});
+			return null;
 		}
 		await findByKey(repo)(req, res);
 
@@ -117,36 +110,31 @@ describe('Database service', () => {
 
 	it('should update existing key value pair', async () => {
 		const req = {
-			params: {key: "Other_key"},
-			body: {value: "Other_value"},
+			body: {key: "Other_key", value: "Other_value"},
 		};
 
 		await createOrUpdate(repo)(req, res);
 
 		assert.ok(storage[0]);
-		assert.equal(storage[0].key, req.params.key);
+		assert.equal(storage[0].key, req.body.key);
 		assert.equal(storage[0].value, req.body.value);
 	});
 
 	it('should create a new key value pair', async () => {
 		const req = {
-			params: {key: "Missing_key"},
-			body: {value: "Missing_value"},
+			body: {key: "Missing_key", value: "Missing_value"},
 		};
 
 		// Override default method behaviour for this test
 		repo.updateOne = (_, body) => {
 			storage.push(body);
-			return {
-				exec: () => {
-				},
-			};
+			return {};
 		};
 
 		await createOrUpdate(repo)(req, res);
 
 		assert.ok(storage[1]);
-		assert.equal(storage[1].key, req.params.key);
+		assert.equal(storage[1].key, req.body.key);
 		assert.equal(storage[1].value, req.body.value);
 	});
 
@@ -184,5 +172,11 @@ describe('Database service', () => {
 		assert.ok(result);
 		assert.equal(status, 400);
 		assert.equal(result.message, "invalid request");
+	});
+
+	it('should remove all key value pairs', async () => {
+		await removeAll(repo)(null, res);
+
+		assert.equal(storage.length, 0);
 	});
 });

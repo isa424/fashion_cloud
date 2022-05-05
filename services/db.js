@@ -11,8 +11,7 @@ const connectionFactory = () => {
 };
 
 /**
- * Return repository methods to abstract away mongo implementation
- * Certain methods require .exec() to return a promise
+ * Return repository methods to abstract away mongo implementation. Can create a similar method for other databases.
  * @param conn
  */
 const getDataRepo = (conn) => {
@@ -26,7 +25,10 @@ const getDataRepo = (conn) => {
 		return conn.models.Data.find(params).exec();
 	};
 
-	model.create = conn.models.Data.create;
+	// Create does not require .exec() in our case
+	model.create = async (params) => {
+		return conn.models.Data.create(params);
+	};
 
 	model.updateOne = async (...params) => {
 		return conn.models.Data.updateOne(...params).exec();
@@ -35,6 +37,10 @@ const getDataRepo = (conn) => {
 	model.deleteOne = async (params) => {
 		return conn.models.Data.deleteOne(params).exec();
 	};
+
+	model.deleteMany = async (params) => {
+		return conn.models.Data.deleteMany(params).exec();
+	}
 
 	return model;
 };
@@ -49,9 +55,7 @@ const findByKey = (repo) => {
 			return;
 		}
 
-		let result = await repo.findOne({
-			key,
-		}).exec();
+		let result = await repo.findOne({key});
 
 		// If exists return and stop
 		if (result) {
@@ -73,7 +77,7 @@ const findByKey = (repo) => {
 
 const findAll = (repo) => {
 	return async (req, res) => {
-		const result = await repo.find().exec();
+		const result = await repo.find();
 
 		res.json(result);
 	};
@@ -81,17 +85,16 @@ const findAll = (repo) => {
 
 const createOrUpdate = (repo) => {
 	return async (req, res) => {
-		const key = req.params.key;
-		const body = {key, ...req.body};
+		const body = req.body;
 
-		if (!key || !body.value) {
+		if (!body.key || !body.value) {
 			res.status(400);
 			res.json({message: "invalid request"});
 			return;
 		}
 
 		// Update or create
-		const result = await repo.updateOne({key}, body, {upsert: true}).exec();
+		const result = await repo.updateOne({key: body.key}, body, {upsert: true});
 
 		res.json(result);
 	};
@@ -108,12 +111,20 @@ const removeByKey = (repo) => {
 		}
 
 		// Do not throw error if key is missing, keep DELETE method idempotent
-		const result = await repo.deleteOne({key}).exec();
+		const result = await repo.deleteOne({key});
+
+		res.json(result);
+	};
+};
+
+const removeAll = (repo) => {
+	return async (req, res) => {
+		const result = await repo.deleteMany();
 
 		res.json(result);
 	};
 };
 
 module.exports = {
-	findByKey, findAll, createOrUpdate, removeByKey, getDataRepo, connectionFactory,
+	findByKey, findAll, createOrUpdate, removeByKey, removeAll, getDataRepo, connectionFactory,
 };
