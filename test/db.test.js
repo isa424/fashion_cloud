@@ -1,5 +1,5 @@
 const assert = require('assert');
-const {findByKey, findAll,} = require('../services/db');
+const {findByKey, findAll, createOrUpdate,} = require('../services/db');
 
 // Store data here
 let storage;
@@ -12,7 +12,9 @@ let params;
 
 // Store json response result
 let result;
+let status;
 const res = {
+	status: (st) => status = st,
 	json: (data) => result = data,
 }
 
@@ -20,6 +22,7 @@ describe('Database service', () => {
 	beforeEach(() => {
 		params = null;
 		result = null;
+		status = null;
 
 		storage = [
 			{
@@ -40,6 +43,15 @@ describe('Database service', () => {
 							exec: () => (storage[0]),
 						})
 					},
+					updateOne: (_, body) => {
+						storage[0] = body;
+
+						return {
+							exec: () => ({
+								upsertedId: "1",
+							}),
+						};
+					}
 				},
 			},
 		};
@@ -86,5 +98,52 @@ describe('Database service', () => {
 		assert.equal(result.key, 'missing');
 		assert.ok(typeof result.value === 'string');
 		assert.equal(result.value.length, 10); // random string length is 10 for now
+	});
+
+	it('should update existing key value pair', async () => {
+		const req = {
+			params: {key: "Other_key"},
+			body: {value: "Other_value"},
+		};
+
+		await createOrUpdate(conn)(req, res);
+
+		assert.ok(storage[0]);
+		assert.equal(storage[0].key, req.params.key);
+		assert.equal(storage[0].value, req.body.value);
+	});
+
+	it('should create a new key value pair', async () => {
+		const req = {
+			params: {key: "Missing_key"},
+			body: {value: "Missing_value"},
+		};
+
+		// Override default method behaviour for this test
+		conn.models.Data.updateOne = (_, body) => {
+			storage.push(body);
+			return {
+				exec: () => {},
+			};
+		};
+
+		await createOrUpdate(conn)(req, res);
+
+		assert.ok(storage[1]);
+		assert.equal(storage[1].key, req.params.key);
+		assert.equal(storage[1].value, req.body.value);
+	});
+
+	it('should fail validation when creating/updating a key value pair', async () => {
+		const req = {
+			params: {},
+			body: {},
+		};
+
+		await createOrUpdate(conn)(req, res);
+
+		assert.ok(result);
+		assert.equal(status, 400);
+		assert.equal(result.message, "invalid request");
 	});
 });

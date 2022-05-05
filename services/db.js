@@ -42,8 +42,26 @@ const findAll = (conn) => {
 
 		res.json(result);
 	};
-}
+};
+
+const createOrUpdate = (conn) => {
+	return async (req, res) => {
+		const key = req.params.key;
+		const body = {key, ...req.body};
+
+		if (!key || !body.value) {
+			res.status(400);
+			res.json({message: "invalid request"});
+			return;
+		}
+
+		// Update or create
+		const result = await conn.models.Data.updateOne({key}, body, {upsert: true}).exec();
+
+		res.json(result);
+	};
+};
 
 module.exports = {
-	findByKey, findAll, connectionFactory,
+	findByKey, findAll, createOrUpdate, connectionFactory,
 };
